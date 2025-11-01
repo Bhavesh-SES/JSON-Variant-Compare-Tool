@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>🧠 JSON Variant Compare Tool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- ✅ Correct JSON Formatter (UMD) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/json-formatter-js@2.3.4/dist/json-formatter.min.css" />
+    <script src="https://unpkg.com/json-formatter-js@2.3.4/dist/json-formatter.umd.js"></script>
+
+    <!-- ✅ XLSX for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- ✅ PapaParse for CSV Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <style>
+        :root {
+            --bg-light: #f9f9f9;
+            --bg-dark: #1e1e1e;
+            --text-light: #333;
+            --text-dark: #eee;
+            --box-light: #fff;
+            --box-dark: #2a2a2a;
+            --border: #ccc;
+            --green: #c8e6c9;
+            --red: #ffcdd2;
+            --highlight: yellow;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--bg-light);
+            color: var(--text-light);
+            margin: 0;
+            padding: 20px;
+        }
+
+        [data-theme="dark"] {
+            background: var(--bg-dark);
+            color: var(--text-dark);
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        button,
+        select,
+        input[type="file"],
+        input[type="text"] {
+            padding: 8px 12px;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            padding: 10px;
+            border: 1px solid var(--border);
+            vertical-align: top;
+            text-align: left;
+        }
+
+        .match {
+            background: var(--green);
+        }
+
+        .mismatch {
+            background: var(--red);
+        }
+
+        .json-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .highlight-text {
+            background-color: var(--highlight);
+        }
+    </style>
+</head>
+
+<body data-theme="light">
+    <h2>🧠 JSON Variant Compare Tool</h2>
+    <div class="toolbar">
+        <button onclick="toggleTheme()">🌃 Toggle Theme</button>
+        <select id="modeToggle" onchange="switchMode()">
+            <option value="upload">📁 Upload CSV</option>
+            <option value="paste">📋 Paste JSON</option>
+        </select>
+        <input type="file" id="csvInput" accept=".csv" />
+        <button onclick="loadCSV()">📅 Load CSV</button>
+        <button onclick="downloadExcel()">⬇️ Download XLSX</button>
+        <input type="text" id="searchInput" placeholder="🔍 Search..." oninput="searchInTable()" />
+        <button onclick="expandAll()">➕ Expand All</button>
+        <button onclick="collapseAll()">➖ Collapse All</button>
+    </div>
+
+    <div id="pasteArea" style="display:none">
+        <textarea id="pasteInput" rows="10" style="width: 100%;"
+            placeholder="Paste your JSON rows here (one per line)..."></textarea>
+        <button onclick="loadPastedData()">✅ Load Pasted JSON</button>
+    </div>
+
+    <div id="jsonTable"></div>
+
+    <script>
+        let parsedData = [];
+        let formatterRefs = [];
+    
+        function toggleTheme() {
+            const theme = document.body.getAttribute("data-theme") === "dark" ? "light" : "dark";
+            document.body.setAttribute("data-theme", theme);
+        }
+    
+        function switchMode() {
+            document.getElementById("pasteArea").style.display = (document.getElementById("modeToggle").value === 'paste') ? 'block' : 'none';
+        }
+    
+        function parseJsonCell(cell) {
+            try {
+                return JSON.parse(cell.replace(/""/g, '"'));
+            } catch {
+                return null;
+            }
+        }
+    
+        function highlightJSON(container, term) {
+            if (!term) return;
+            const regex = new RegExp(`(${term})`, "gi");
+            const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+            const nodesToHighlight = [];
+    
+            while (walker.nextNode()) {
+                const current = walker.currentNode;
+                if (current.nodeValue.toLowerCase().includes(term.toLowerCase())) {
+                    nodesToHighlight.push(current);
+                }
+            }
+    
+            nodesToHighlight.forEach(textNode => {
+                const span = document.createElement("span");
+                span.innerHTML = textNode.nodeValue.replace(regex, '<span style="background-color: yellow;">$1</span>');
+                textNode.parentNode.replaceChild(span, textNode);
+            });
+        }
+    
+        function renderTable(data) {
+            formatterRefs = [];
+            const headers = ['OverRideID', 'DCA', 'DCB', 'DCC', 'DCD'];
+            const table = document.createElement("table");
+            const thead = document.createElement("thead");
+            const headerRow = document.createElement("tr");
+    
+            headers.forEach(h => {
+                const th = document.createElement("th");
+                th.textContent = h;
+                headerRow.appendChild(th);
+            });
+    
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+    
+            const tbody = document.createElement("tbody");
+    
+            data.forEach((row, rowIndex) => {
+                const tr = document.createElement("tr");
+                formatterRefs[rowIndex] = [];
+    
+                headers.forEach((key, colIndex) => {
+                    const td = document.createElement("td");
+    
+                    if (key === "OverRideID") {
+                        td.textContent = row[key];
+                    } else {
+                        const container = document.createElement("div");
+                        container.className = "json-container";
+    
+                        const parsed = parseJsonCell(row[key]);
+                        const refParsed = parseJsonCell(row["DCA"]);
+    
+                        if (JSON.stringify(parsed) === JSON.stringify(refParsed)) {
+                            td.classList.add("match");
+                        } else {
+                            td.classList.add("mismatch");
+                        }
+    
+                        if (parsed) {
+                            const formatter = new JSONFormatter(parsed, 10, { theme: null });
+                            container.appendChild(formatter.render());
+                            formatter.openAtDepth(10);
+                            formatterRefs[rowIndex][colIndex] = formatter;
+                        } else {
+                            container.textContent = "Invalid JSON";
+                        }
+    
+                        td.appendChild(container);
+                    }
+    
+                    tr.appendChild(td);
+                });
+    
+                tbody.appendChild(tr);
+            });
+    
+            table.appendChild(tbody);
+            document.getElementById("jsonTable").innerHTML = "";
+            document.getElementById("jsonTable").appendChild(table);
+        }
+    
+        function loadCSV() {
+            const file = document.getElementById("csvInput").files[0];
+            if (!file) return alert("Please upload a CSV.");
+    
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function (results) {
+                    parsedData = results.data;
+                    renderTable(parsedData);
+                }
+            });
+        }
+    
+        function loadPastedData() {
+            const lines = document.getElementById("pasteInput").value.trim().split("\n");
+            parsedData = lines.map((line, i) => {
+                const obj = parseJsonCell(line.trim());
+                const str = JSON.stringify(obj);
+                return {
+                    OverRideID: "Row " + (i + 1),
+                    DCA: str,
+                    DCB: str,
+                    DCC: str,
+                    DCD: str
+                };
+            });
+            renderTable(parsedData);
+        }
+    
+        function searchInTable() {
+            const term = document.getElementById("searchInput").value.toLowerCase().trim();
+            const rows = document.querySelectorAll("#jsonTable tbody tr");
+    
+            rows.forEach((row, rowIndex) => {
+                let rowMatch = false;
+    
+                row.querySelectorAll("td").forEach((td, colIndex) => {
+                    const key = ["OverRideID", "DCA", "DCB", "DCC", "DCD"][colIndex];
+                    td.classList.remove("highlight");
+    
+                    if (key === "OverRideID") {
+                        const text = parsedData[rowIndex][key];
+                        if (term && text.toLowerCase().includes(term)) {
+                            td.innerHTML = text.replace(new RegExp(`(${term})`, "gi"), '<span style="background-color: yellow;">$1</span>');
+                            rowMatch = true;
+                        } else {
+                            td.innerHTML = text;
+                        }
+                        return;
+                    }
+    
+                    const raw = parsedData[rowIndex][key];
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(raw.replace(/""/g, '"'));
+                    } catch {
+                        td.textContent = "Invalid JSON";
+                        return;
+                    }
+    
+                    const container = document.createElement("div");
+                    container.className = "json-container";
+    
+                    const formatter = new JSONFormatter(parsed, 10, { theme: null });
+                    container.appendChild(formatter.render());
+                    formatter.openAtDepth(10);
+                    highlightJSON(container, term);
+    
+                    td.innerHTML = "";
+                    td.appendChild(container);
+                    formatterRefs[rowIndex][colIndex] = formatter;
+    
+                    if (JSON.stringify(parsed).toLowerCase().includes(term)) {
+                        rowMatch = true;
+                    }
+                });
+    
+                row.style.display = (!term || rowMatch) ? "" : "none";
+            });
+        }
+    
+        function expandAll() {
+            formatterRefs.forEach(row => {
+                row.forEach(f => {
+                    if (f) f.openAtDepth(10);
+                });
+            });
+        }
+    
+        function collapseAll() {
+            formatterRefs.forEach(row => {
+                row.forEach(f => {
+                    if (f) f.openAtDepth(0);
+                });
+            });
+        }
+    
+        function downloadExcel() {
+            if (!parsedData.length) return alert("No data to download.");
+            const wb = XLSX.utils.book_new();
+            const ws_data = [['OverRideID', 'DCA', 'DCB', 'DCC', 'DCD']];
+            parsedData.forEach(row => {
+                ws_data.push([row.OverRideID, row.DCA, row.DCB, row.DCC, row.DCD]);
+            });
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            XLSX.utils.book_append_sheet(wb, ws, "Comparison");
+            XLSX.writeFile(wb, "comparison.xlsx");
+        }
+    </script>    
+</body>
+</html>
