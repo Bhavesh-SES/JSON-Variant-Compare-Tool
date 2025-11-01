@@ -122,16 +122,16 @@
     <script>
         let parsedData = [];
         let formatterRefs = [];
-    
+
         function toggleTheme() {
             const theme = document.body.getAttribute("data-theme") === "dark" ? "light" : "dark";
             document.body.setAttribute("data-theme", theme);
         }
-    
+
         function switchMode() {
             document.getElementById("pasteArea").style.display = (document.getElementById("modeToggle").value === 'paste') ? 'block' : 'none';
         }
-    
+
         function parseJsonCell(cell) {
             try {
                 return JSON.parse(cell.replace(/""/g, '"'));
@@ -139,67 +139,67 @@
                 return null;
             }
         }
-    
+
         function highlightJSON(container, term) {
             if (!term) return;
             const regex = new RegExp(`(${term})`, "gi");
             const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
             const nodesToHighlight = [];
-    
+
             while (walker.nextNode()) {
                 const current = walker.currentNode;
                 if (current.nodeValue.toLowerCase().includes(term.toLowerCase())) {
                     nodesToHighlight.push(current);
                 }
             }
-    
+
             nodesToHighlight.forEach(textNode => {
                 const span = document.createElement("span");
                 span.innerHTML = textNode.nodeValue.replace(regex, '<span style="background-color: yellow;">$1</span>');
                 textNode.parentNode.replaceChild(span, textNode);
             });
         }
-    
+
         function renderTable(data) {
             formatterRefs = [];
             const headers = ['OverRideID', 'DCA', 'DCB', 'DCC', 'DCD'];
             const table = document.createElement("table");
             const thead = document.createElement("thead");
             const headerRow = document.createElement("tr");
-    
+
             headers.forEach(h => {
                 const th = document.createElement("th");
                 th.textContent = h;
                 headerRow.appendChild(th);
             });
-    
+
             thead.appendChild(headerRow);
             table.appendChild(thead);
-    
+
             const tbody = document.createElement("tbody");
-    
+
             data.forEach((row, rowIndex) => {
                 const tr = document.createElement("tr");
                 formatterRefs[rowIndex] = [];
-    
+
                 headers.forEach((key, colIndex) => {
                     const td = document.createElement("td");
-    
+
                     if (key === "OverRideID") {
                         td.textContent = row[key];
                     } else {
                         const container = document.createElement("div");
                         container.className = "json-container";
-    
+
                         const parsed = parseJsonCell(row[key]);
                         const refParsed = parseJsonCell(row["DCA"]);
-    
+
                         if (JSON.stringify(parsed) === JSON.stringify(refParsed)) {
                             td.classList.add("match");
                         } else {
                             td.classList.add("mismatch");
                         }
-    
+
                         if (parsed) {
                             const formatter = new JSONFormatter(parsed, 10, { theme: null });
                             container.appendChild(formatter.render());
@@ -208,25 +208,25 @@
                         } else {
                             container.textContent = "Invalid JSON";
                         }
-    
+
                         td.appendChild(container);
                     }
-    
+
                     tr.appendChild(td);
                 });
-    
+
                 tbody.appendChild(tr);
             });
-    
+
             table.appendChild(tbody);
             document.getElementById("jsonTable").innerHTML = "";
             document.getElementById("jsonTable").appendChild(table);
         }
-    
+
         function loadCSV() {
             const file = document.getElementById("csvInput").files[0];
             if (!file) return alert("Please upload a CSV.");
-    
+
             Papa.parse(file, {
                 header: true,
                 skipEmptyLines: true,
@@ -236,7 +236,7 @@
                 }
             });
         }
-    
+
         function loadPastedData() {
             const lines = document.getElementById("pasteInput").value.trim().split("\n");
             parsedData = lines.map((line, i) => {
@@ -252,18 +252,18 @@
             });
             renderTable(parsedData);
         }
-    
+
         function searchInTable() {
             const term = document.getElementById("searchInput").value.toLowerCase().trim();
             const rows = document.querySelectorAll("#jsonTable tbody tr");
-    
+
             rows.forEach((row, rowIndex) => {
                 let rowMatch = false;
-    
+
                 row.querySelectorAll("td").forEach((td, colIndex) => {
                     const key = ["OverRideID", "DCA", "DCB", "DCC", "DCD"][colIndex];
                     td.classList.remove("highlight");
-    
+
                     if (key === "OverRideID") {
                         const text = parsedData[rowIndex][key];
                         if (term && text.toLowerCase().includes(term)) {
@@ -274,7 +274,7 @@
                         }
                         return;
                     }
-    
+
                     const raw = parsedData[rowIndex][key];
                     let parsed;
                     try {
@@ -283,28 +283,28 @@
                         td.textContent = "Invalid JSON";
                         return;
                     }
-    
+
                     const container = document.createElement("div");
                     container.className = "json-container";
-    
+
                     const formatter = new JSONFormatter(parsed, 10, { theme: null });
                     container.appendChild(formatter.render());
                     formatter.openAtDepth(10);
                     highlightJSON(container, term);
-    
+
                     td.innerHTML = "";
                     td.appendChild(container);
                     formatterRefs[rowIndex][colIndex] = formatter;
-    
+
                     if (JSON.stringify(parsed).toLowerCase().includes(term)) {
                         rowMatch = true;
                     }
                 });
-    
+
                 row.style.display = (!term || rowMatch) ? "" : "none";
             });
         }
-    
+
         function expandAll() {
             formatterRefs.forEach(row => {
                 row.forEach(f => {
@@ -312,7 +312,7 @@
                 });
             });
         }
-    
+
         function collapseAll() {
             formatterRefs.forEach(row => {
                 row.forEach(f => {
@@ -320,7 +320,20 @@
                 });
             });
         }
-    
+
+        /* Blocked the Right click option to inspect the source code as a security concern of code copyright.
+        Below is exact code added newly at last part of code: */
+
+        document.addEventListener('contextmenu', event => event.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.ctrlKey && (e.key === 'u' || e.key === 'U' || e.key === 'i' || e.key === 'I' || e.key === 'j' || e.key === 'J')) {
+                e.preventDefault();
+            }
+            if (e.keyCode === 123) { // F12 key
+                e.preventDefault();
+            }
+        });
+
         function downloadExcel() {
             if (!parsedData.length) return alert("No data to download.");
             const wb = XLSX.utils.book_new();
@@ -332,6 +345,7 @@
             XLSX.utils.book_append_sheet(wb, ws, "Comparison");
             XLSX.writeFile(wb, "comparison.xlsx");
         }
-    </script>    
+    </script>
 </body>
+
 </html>
